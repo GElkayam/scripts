@@ -1,4 +1,4 @@
 scripts
 =======
 
-G's Scripts
+gitget.sh - Download Binaries from GitHub Releases
