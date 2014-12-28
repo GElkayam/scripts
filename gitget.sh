@@ -14,34 +14,54 @@ main() {
 }
 
 printHelp(){
-echo "Usage: $0 [options...]
-Options:
+echo "Usage: $0 (-u gituser | -o gitorg) -r repo (-up user:pass | -t token) [options...]
+
+Mandaroty Options:
  -up, --userpass	Git login and password in the format of username:password
- -u, --username		Git User name ()
- -o, --org		Organization name
- -r, --repo 		Repository name
- -l, --latest 		download only the latest releases
- -n, --no-download	don't download
- -d, --debug 		Debug mode
- -h, --help		this help message and exit
+ -t,  --token		OAuth Token login, can be used instead of username and password
+ -u,  --username	Git User name ()
+ -o,  --org		Organization name
+ -r,  --repo 		Repository name
+ 
+ Optional Options:
+ -l,  --latest 		download only the latest releases
+ -n,  --no-download	don't download
+ -d,  --debug 		Debug mode
+ -h,  --help		this help message and exit
 
 "
+
+}
+
+testPairValues() {
+	if [ $2 ] ; then
+		if [[ $2 == -* ]] ; then 
+			echo "Value starts with dash \"$2\" are you sure you'r not missing a value?"
+			printHelp
+			exit 3
+		fi
+		return 0
+	else
+		echo "$1 didn't have a value
+Usage: $1 <Value>"
+		printHelp
+		exit 2
+	fi
 }
 
 parse_switch() {
 	DOWNLOAD=true
-	SUPPORTED="-up -r -o -l -d -n"
-	while [ $# -gt 0 ]; do
-		[ $DEBUG ] && echo $*
+	while (( $# )); do
 		case $1 in
-			-up|--userpass) USERPASS=$2
-			shift 2
-			;;
-			-o|--org) ORG=$2
+			-up|--userpass) testPairValues $1 $2 && USERPASS=$2
 			shift 2 ;;
-			-u|--username) GITUSER=$2
+			-t|--token) testPairValues $1 $2 &&  TOKEN=$2
 			shift 2 ;;
-			-r|--repo) REPO=$2 
+			-o|--org) testPairValues $1 $2 &&  ORG=$2
+			shift 2 ;;
+			-u|--username) testPairValues $1 $2 && GITUSER=$2 
+			shift 2 ;;
+			-r|--repo) testPairValues $1 $2 &&REPO=$2 
 			shift 2 ;;
 			-l|--latest) LATEST=true 
 			shift 1 ;;
@@ -50,20 +70,23 @@ parse_switch() {
 			-n|--no-download) DOWNLOAD=false
 			shift 1 ;;
 			-h|--help) printHelp ; exit 0 ;;
-			*) echo ERROR: $1 is unsupported. Only $SUPPORTED are supported.
+			*) echo ERROR: $1 is unsupported.
+			printHelp
 			exit 1
 			;;
 		esac
 	done
 	[ $DEBUG ] && echo "userpass: $USERPASS \n Org: $ORG \n Repo: $REPO \n Download: $DOWNLOAD"
+	[ $USERPASS ] && USERAUTH=-u $USERPASS
+	[ $TOKEN ] && TOKENAUTH=?access_token=$TOKEN
 }
 
 test_input() {
-	if [  ! -n "$USERPASS"  -o  ! -n "$REPO" -o ! -n "$ORG" -a ! -n "$GITUSER" ] ; then
+	if [  ! -n "$USERPASS"  -a ! -n "$TOKEN" -o  ! -n "$REPO" -o ! -n "$ORG" -a ! -n "$GITUSER" ] ; then
 		printHelp
-		[ -z "$USERPASS" ] && echo ERROR: Missing Username and Password. supply them as -up user:pass
+		[ -z "$USERPASS" ] && echo ERROR: Missing Username and Password or Access Token.
 		[ -z "$ORG" ] && echo ERROR: Missing Org or Username, please supply one of them. supply it as -o OrgName or -u Username
-		[ -z "$USERPASS" ] && echo ERROR: Missing Repository name. supply it as -r RepositoryName
+		[ -z "$REPO" ] && echo ERROR: Missing Repository name. supply it as -r RepositoryName
 
 		exit 1
 	fi
@@ -80,7 +103,7 @@ getJSON() {
 }
 
 testOrg(){
-	RESPONSE=$(curl -s -u $USERPASS https://api.github.com/orgs/$ORG --write-out %{http_code} --output /dev/null)
+	RESPONSE=$(curl -s $USERAUTH https://api.github.com/orgs/$ORG$TOKENAUTH --write-out %{http_code} --output /dev/null)
 	if [ "$RESPONSE" != "200" ] ; then
 		echo ERROR: Org $ORG was not found
 		exit 4
@@ -88,7 +111,7 @@ testOrg(){
 }
 
 testUser(){
-	RESPONSE=$(curl -s -u $USERPASS https://api.github.com/users/$GITUSER --write-out %{http_code} --output /dev/null)
+	RESPONSE=$(curl -s $USERAUTH https://api.github.com/users/$GITUSER$TOKENAUTH --write-out %{http_code} --output /dev/null)
 	if [ "$RESPONSE" != "200" ] ; then
 		echo ERROR: User $GITUSER was not found
 		exit 4
@@ -97,7 +120,7 @@ testUser(){
 
 
 testRepo(){
-	RESPONSE=$(curl -s -u $USERPASS https://api.github.com/repos/$ORG/$REPO --write-out %{http_code} --output /dev/null)
+	RESPONSE=$(curl -s $USERAUTH https://api.github.com/repos/$ORG/$REPO$TOKENAUTH --write-out %{http_code} --output /dev/null)
 	if [ "$RESPONSE" != "200" ] ; then
 		[ -n "$ORG" ] && echo ERROR: Repository $REPO was not found in $ORG
 		[ -n "$GITUSER" ] && echo ERROR: Repository $REPO was not found in $GITUSER
@@ -107,8 +130,8 @@ testRepo(){
 }
 
 getList () {
-	[ $LATEST ] && LIST=`curl -s -u $USERPASS https://api.github.com/repos/$ORG/$REPO/releases | sh ./JSON.sh -b | grep "^\[0," |grep -v uploader | grep assets | grep "\"name\"\|\"url\""`
-	[ ! $LATEST ] && LIST=`curl -s -u $USERPASS https://api.github.com/repos/$ORG/$REPO/releases | sh ./JSON.sh -b | grep -v uploader | grep assets | grep "\"name\"\|\"url\""`
+	[ $LATEST ] && LIST=`curl -s $USERAUTH https://api.github.com/repos/$ORG/$REPO/releases$TOKENAUTH | sh ./JSON.sh -b | grep "^\[0," |grep -v uploader | grep assets | grep "\"name\"\|\"url\""`
+	[ ! $LATEST ] && LIST=`curl -s $USERAUTH https://api.github.com/repos/$ORG/$REPO/releases$TOKENAUTH | sh ./JSON.sh -b | grep -v uploader | grep assets | grep "\"name\"\|\"url\""`
 }
 
 downloadList() {
@@ -123,7 +146,7 @@ do
 		[ -f $NAME ] && echo "$NAME exists before downloading."
 		$DOWNLOAD && echo Downloading $NAME as referenced in $URL
 		! $DOWNLOAD && echo Not Downloading $NAME as referenced in $URL
-		$DOWNLOAD && curl -s -u $USERPASS -L -H "Accept:application/octet-stream" ${URL//\"} -o $NAME
+		$DOWNLOAD && curl -s $USERAUTH -L -H "Accept:application/octet-stream" ${URL//\"}$TOKENAUTH -o $NAME
 		[ -s $NAME ] && $DOWNLOAD && echo ${NAME//\"} downloaded successfully. ||  echo $NAME was not downloaded.
 	fi
 done
