@@ -14,11 +14,12 @@ main() {
 }
 
 printHelp(){
-echo "Usage: $0 (-u gituser | -o gitorg) -r repo (-up user:pass | -t token) [options...]
+echo "Usage: $0 (-u gituser | -o gitorg) -r repo (-up user:pass | -t token | -a) [options...]
 
 Mandaroty Options:
  -up, --userpass	Git login and password in the format of username:password
  -t,  --token		OAuth Token login, can be used instead of username and password
+ -a,  --anonymous	Anonymous Authentication, no token and no user password
  -u,  --username	Git User name ()
  -o,  --org		Organization name
  -r,  --repo 		Repository name
@@ -51,6 +52,7 @@ Usage: $1 <Value>"
 
 parse_switch() {
 	DOWNLOAD=true
+	ANONYMOUS=false
 	while (( $# )); do
 		case $1 in
 			-up|--userpass) testPairValues $1 $2 && USERPASS=$2
@@ -63,6 +65,8 @@ parse_switch() {
 			shift 2 ;;
 			-r|--repo) testPairValues $1 $2 &&REPO=$2 
 			shift 2 ;;
+			-a|--anonymous) ANONYMOUS=true
+			shift 1 ;;
 			-l|--latest) LATEST=true 
 			shift 1 ;;
 			-d|--debug) DEBUG=true 
@@ -77,15 +81,16 @@ parse_switch() {
 		esac
 	done
 	[ $DEBUG ] && echo "userpass: $USERPASS \n Org: $ORG \n Repo: $REPO \n Download: $DOWNLOAD"
+	[ $DEBUG ] && echo "ANONYMOUS: $ANONYMOUS \n Org: $ORG \n Repo: $REPO \n Download: $DOWNLOAD"
 	[ $USERPASS ] && USERAUTH=-u $USERPASS
 	[ $TOKEN ] && TOKENAUTH=?access_token=$TOKEN
 }
 
 test_input() {
-	if [  ! -n "$USERPASS"  -a ! -n "$TOKEN" -o  ! -n "$REPO" -o ! -n "$ORG" -a ! -n "$GITUSER" ] ; then
+	if [[ -z "$USERPASS"  && -z "$TOKEN" && "$ANONYMOUS" == false  ||  -z "$REPO" || -z "$ORG" && -z "$GITUSER" ]] ; then
 		printHelp
-		[ -z "$USERPASS" ] && echo ERROR: Missing Username and Password or Access Token.
-		[ -z "$ORG" ] && echo ERROR: Missing Org or Username, please supply one of them. supply it as -o OrgName or -u Username
+		[[ -z "$USERPASS"  && -z "$TOKEN" && "$ANONYMOUS" == false ]] && echo ERROR: Missing Username and Password, Access Token or Anonymous directive.
+		[[ -z "$ORG" && -z "$GITUSER" ]] && echo ERROR: Missing Org or Username, please supply one of them. supply it as -o OrgName or -u Username
 		[ -z "$REPO" ] && echo ERROR: Missing Repository name. supply it as -r RepositoryName
 
 		exit 1
@@ -95,7 +100,6 @@ test_input() {
 		echo "Both Org and Username were passed, please choose only one of them"
 		exit 1
 	fi
-	
 }
 
 getJSON() {
@@ -123,7 +127,8 @@ testRepo(){
 	RESPONSE=$(curl -s $USERAUTH https://api.github.com/repos/$ORG/$REPO$TOKENAUTH --write-out %{http_code} --output /dev/null)
 	if [ "$RESPONSE" != "200" ] ; then
 		[ -n "$ORG" ] && echo ERROR: Repository $REPO was not found in $ORG
-		[ -n "$GITUSER" ] && echo ERROR: Repository $REPO was not found in $GITUSER
+		[ -n "$GITUSER" ] && echo ERROR: Repository $REPO was not found in $GITUSER.
+		[ $ANONYMOUS] && echo ERROR: Repository $REPO might be private
 		
 		exit 4
 	fi
