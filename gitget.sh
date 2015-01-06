@@ -26,6 +26,7 @@ Mandaroty Options:
  
  Optional Options:
  -l,  --latest 		download only the latest releases
+      --tag			specific tag/release
  -n,  --no-download	don't download
  -d,  --debug 		Debug mode
  -h,  --help		this help message and exit
@@ -63,12 +64,14 @@ parse_switch() {
 			shift 2 ;;
 			-u|--username) testPairValues $1 $2 && GITUSER=$2 
 			shift 2 ;;
-			-r|--repo) testPairValues $1 $2 &&REPO=$2 
+			-r|--repo) testPairValues $1 $2 && REPO=$2 
 			shift 2 ;;
 			-a|--anonymous) ANONYMOUS=true
 			shift 1 ;;
 			-l|--latest) LATEST=true 
 			shift 1 ;;
+			--tag) testPairValues $1 $2 && TAG=$2 
+			shift 2 ;;
 			-d|--debug) DEBUG=true 
 			shift 1 ;;
 			-n|--no-download) DOWNLOAD=false
@@ -87,12 +90,13 @@ parse_switch() {
 }
 
 test_input() {
-	if [[ -z "$USERPASS"  && -z "$TOKEN" && "$ANONYMOUS" == false  ||  -z "$REPO" || -z "$ORG" && -z "$GITUSER" ]] ; then
+	if [[ -z "$USERPASS"  && -z "$TOKEN" && "$ANONYMOUS" == false  ||  -z "$REPO" || -z "$ORG" && -z "$GITUSER" || -n "$TAG" && "$LATEST" == "true" ]] ; then
 		printHelp
 		[[ -z "$USERPASS"  && -z "$TOKEN" && "$ANONYMOUS" == false ]] && echo ERROR: Missing Username and Password, Access Token or Anonymous directive.
 		[[ -z "$ORG" && -z "$GITUSER" ]] && echo ERROR: Missing Org or Username, please supply one of them. supply it as -o OrgName or -u Username
 		[ -z "$REPO" ] && echo ERROR: Missing Repository name. supply it as -r RepositoryName
-
+		[[ -n "$TAG" && "$LATEST" == "true" ]] && echo "ERROR: Both tag and latest were passed, please specify only one of them (or none)."
+		
 		exit 1
 	fi
 	if [ -n "$ORG" -a -n "$GITUSER"  ] ; then
@@ -128,15 +132,19 @@ testRepo(){
 	if [ "$RESPONSE" != "200" ] ; then
 		[ -n "$ORG" ] && echo ERROR: Repository $REPO was not found in $ORG
 		[ -n "$GITUSER" ] && echo ERROR: Repository $REPO was not found in $GITUSER.
-		[ $ANONYMOUS] && echo ERROR: Repository $REPO might be private
+		[ $ANONYMOUS ] && echo ERROR: Repository $REPO might be private
 		
 		exit 4
 	fi
 }
 
 getList () {
-	[ $LATEST ] && LIST=`curl -s $USERAUTH https://api.github.com/repos/$ORG/$REPO/releases$TOKENAUTH | sh ./JSON.sh -b | grep "^\[0," |grep -v uploader | grep assets | grep "\"name\"\|\"url\""`
-	[ ! $LATEST ] && LIST=`curl -s $USERAUTH https://api.github.com/repos/$ORG/$REPO/releases$TOKENAUTH | sh ./JSON.sh -b | grep -v uploader | grep assets | grep "\"name\"\|\"url\""`
+	[ ! $LATEST ] && LIST=`curl -s $USERAUTH https://api.github.com/repos/$ORG/$REPO/releases$TOKENAUTH | sh ./JSON.sh -b | grep -v uploader | grep assets | grep "\"name\"\|\"url\"\|\"browser_download_url\""`
+	TAGID=0
+	[ -n "$TAG" ] && TAGID=$(echo "$LIST" | grep "$TAG" | sed "s/\[//" | sed "s/,.*//")
+	[ $DEBUG ] && echo "TagID: $TAGID"
+	[[ $LATEST == "true" || -n "$TAG" ]] && LIST=`curl -s $USERAUTH https://api.github.com/repos/$ORG/$REPO/releases$TOKENAUTH | sh ./JSON.sh -b | grep "^\[$TAGID," |grep -v uploader | grep assets | grep "\"name\"\|\"url\"\|\"browser_download_url\""`
+	[ $DEBUG ] && echo -e "LIST:\n$LIST" 
 }
 
 downloadList() {
@@ -146,8 +154,8 @@ do
 	[ $DEBUG ] && echo line is $line
 	VALUE=$(echo $line | cut -f2)
 	[[ $line == *url* ]] && URL=$VALUE 
-	if [[ $line == *name* ]] ; then 
-		NAME=${VALUE//\"}
+	[[ $line == *name* ]] && NAME=${VALUE//\"}
+	if [[ $line == *browser_download_url* ]] ; then 
 		[ -f $NAME ] && echo "$NAME exists before downloading."
 		$DOWNLOAD && echo Downloading $NAME as referenced in $URL
 		! $DOWNLOAD && echo Not Downloading $NAME as referenced in $URL
