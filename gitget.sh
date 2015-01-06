@@ -141,9 +141,10 @@ testRepo(){
 getList () {
 	[ ! $LATEST ] && LIST=`curl -s $USERAUTH https://api.github.com/repos/$ORG/$REPO/releases$TOKENAUTH | sh ./JSON.sh -b | grep -v uploader | grep assets | grep "\"name\"\|\"url\"\|\"browser_download_url\""`
 	TAGID=0
-	[ -n "$TAG" ] && TAGID=$(echo "$LIST" | grep "$TAG" | sed "s/\[//" | sed "s/,.*//")
-	[ $DEBUG ] && echo "TagID: $TAGID"
+	[ -n "$TAG" ] && TAGID=$(echo "$LIST" | grep "\"browser_download_url\"" | grep "$TAG" | sed "s/\[//" | sed "s/,.*//")
+	[ $DEBUG ] && echo "TagID: \"$TAGID\""
 	[[ $LATEST == "true" || -n "$TAG" ]] && LIST=`curl -s $USERAUTH https://api.github.com/repos/$ORG/$REPO/releases$TOKENAUTH | sh ./JSON.sh -b | grep "^\[$TAGID," |grep -v uploader | grep assets | grep "\"name\"\|\"url\"\|\"browser_download_url\""`
+	[ $DEBUG ] && echo "TagID: $TAGID"
 	[ $DEBUG ] && echo -e "LIST:\n$LIST" 
 }
 
@@ -153,7 +154,7 @@ for line in $LIST ;
 do
 	[ $DEBUG ] && echo line is $line
 	VALUE=$(echo $line | cut -f2)
-	[[ $line == *url* ]] && URL=$VALUE 
+	[[ $line == *url* && ! $line == *browser_download_url* ]] && URL=$VALUE 
 	[[ $line == *name* ]] && NAME=${VALUE//\"}
 	if [[ $line == *browser_download_url* ]] ; then 
 		[ -f $NAME ] && echo "$NAME exists before downloading."
