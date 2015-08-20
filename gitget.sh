@@ -141,7 +141,7 @@ testRepo(){
 getList () {
 	[ ! $LATEST ] && LIST=`curl -s $USERAUTH https://api.github.com/repos/$ORG/$REPO/releases$TOKENAUTH | bash ./JSON.sh -b | grep -v uploader | grep assets | grep "\"name\"\|\"url\"\|\"browser_download_url\""`
 	TAGID=0
-	[ -n "$TAG" ] && TAGID=$(echo "$LIST" | grep "\"browser_download_url\"" | grep "$TAG" | sed "s/\[//" | sed "s/,.*//")
+	[ -n "$TAG" ] && TAGID=$(echo "$LIST" | grep "\"browser_download_url\"" | grep "$TAG" | sed "s/\[//" | sed "s/,.*//" | head -1)
 	[ $DEBUG ] && echo "TagID: \"$TAGID\""
 	[[ $LATEST == "true" || -n "$TAG" ]] && LIST=`curl -s $USERAUTH https://api.github.com/repos/$ORG/$REPO/releases$TOKENAUTH | bash ./JSON.sh -b | grep "^\[$TAGID," |grep -v uploader | grep assets | grep "\"name\"\|\"url\"\|\"browser_download_url\""`
 	[ $DEBUG ] && echo "TagID: $TAGID"
